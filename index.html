@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ranCheck – проверка модов</title>
+    <title>ranCheck – проверка модов Minecraft</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <h1>🛡️ ranCheck</h1>
-        <p>Загрузите файл мода для быстрой проверки (имитация)</p>
+        <p>Загрузите мод Minecraft (.jar) для проверки на читы</p>
         
         <div class="upload-area" id="dropArea">
             <p>📂 Перетащите файл сюда или нажмите для выбора</p>
-            <input type="file" id="fileInput" hidden>
+            <input type="file" id="fileInput" hidden accept=".jar,.zip">
         </div>
 
         <div id="result" class="result hidden">
@@ -22,6 +22,7 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
