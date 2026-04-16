@@ -16,6 +16,16 @@
             <input type="file" id="fileInput" hidden accept=".jar,.zip">
         </div>
 
+        <div class="version-inputs">
+            <label>Версия Minecraft (опционально): 
+                <input type="text" id="mcVersion" placeholder="например, 1.20.1">
+            </label>
+            <label>Версия мода (опционально): 
+                <input type="text" id="modVersion" placeholder="например, 15.8.5.12">
+            </label>
+            <button id="autoDetectBtn">🔍 Извлечь версии из имени</button>
+        </div>
+
         <div id="result" class="result hidden">
             <h2>Результат проверки</h2>
             <div id="report"></div>
