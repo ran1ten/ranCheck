@@ -1,5 +1,5 @@
 // ========================
-// ranCheck – улучшенное распознавание версий
+// ranCheck – легитимные моды не проверяются на читы
 // ========================
 
 const dropArea = document.getElementById('dropArea');
@@ -10,7 +10,7 @@ const mcVersionInput = document.getElementById('mcVersion');
 const modVersionInput = document.getElementById('modVersion');
 const autoDetectBtn = document.getElementById('autoDetectBtn');
 
-// ---------- 1. ЧЁРНЫЙ СПИСОК ----------
+// ---------- 1. ЧЁРНЫЙ СПИСОК (только для нелегитимных) ----------
 const bannedModPatterns = [
     /chestesp/i, /freecam/i, /autofish/i,
     /autoclicker/i, /clicker/i, /macro/i,
@@ -28,7 +28,7 @@ const bannedModPatterns = [
     /auto(click|mine|fish|totem)/i
 ];
 
-// ---------- 2. ЛЕГИТИМНЫЕ МОДЫ (для лояльной проверки) ----------
+// ---------- 2. ЛЕГИТИМНЫЕ МОДЫ ----------
 const trustedMods = [
     { name: "Fabric API", keywords: ["fabric-api", "fabricapi", "fabric"] },
     { name: "Sodium", keywords: ["sodium", "sodium-fabric"] },
@@ -42,7 +42,7 @@ const trustedMods = [
     { name: "Indium", keywords: ["indium"] }
 ];
 
-// ---------- 3. УЛУЧШЕННОЕ РАСПОЗНАВАНИЕ ВЕРСИЙ ----------
+// ---------- 3. РАСПОЗНАВАНИЕ ВЕРСИЙ ----------
 function isMinecraftVersion(versionStr) {
     if (!versionStr) return false;
     const match = versionStr.match(/^(\d+)\.(\d+)\.(\d+)$/);
@@ -60,18 +60,13 @@ function isMinecraftVersion(versionStr) {
 
 function extractAllVersionCandidates(filename) {
     const candidates = [];
-    // Паттерны:
-    // 1. Версии с точками: цифры.цифры.цифры (и более) – захватывает 1.20.1, 15.8.5.12, 0.5.3
     const dotPattern = /\d+(?:\.\d+)+/g;
-    // 2. Буквенно-цифровые версии: буквы+цифры+подчёркивания (например, HD_U_I6, U5, I6)
     const alnumPattern = /[A-Za-z]+[_\d]+[A-Za-z\d]*/g;
-    
     let match;
     while ((match = dotPattern.exec(filename)) !== null) {
         if (!candidates.includes(match[0])) candidates.push(match[0]);
     }
     while ((match = alnumPattern.exec(filename)) !== null) {
-        // Исключаем слишком длинные (>20 символов) или состоящие только из цифр (уже пойманы dotPattern)
         if (match[0].length < 20 && !/^\d+$/.test(match[0])) {
             if (!candidates.includes(match[0])) candidates.push(match[0]);
         }
@@ -83,50 +78,38 @@ function identifyVersions(filename) {
     const candidates = extractAllVersionCandidates(filename);
     let mcVersion = null;
     let modVersion = null;
-    
-    // Сначала ищем версию Minecraft среди кандидатов
     for (const cand of candidates) {
         if (isMinecraftVersion(cand)) {
             mcVersion = cand;
             break;
         }
     }
-    
-    // Если нашли версию Minecraft, то остальные кандидаты (кроме неё) считаем версией мода
     if (mcVersion) {
         const otherVersions = candidates.filter(c => c !== mcVersion);
-        if (otherVersions.length > 0) {
-            // Берём первый подходящий (или объединяем)
-            modVersion = otherVersions[0];
-        }
+        if (otherVersions.length > 0) modVersion = otherVersions[0];
     } else {
-        // Если нет версии Minecraft, то всё, что есть – версия мода
         if (candidates.length > 0) modVersion = candidates.join(', ');
     }
-    
     return { mcVersion, modVersion };
 }
 
 function autoDetectVersions() {
     const fileName = fileInput.files[0]?.name;
-    if (!fileName) {
-        alert("Сначала загрузите файл");
-        return false;
-    }
+    if (!fileName) { alert("Сначала загрузите файл"); return false; }
     const { mcVersion, modVersion } = identifyVersions(fileName);
     if (mcVersion) mcVersionInput.value = mcVersion;
     if (modVersion) modVersionInput.value = modVersion;
     let msg = `🔍 Извлечено:`;
     if (mcVersion) msg += ` версия Minecraft = ${mcVersion}`;
     if (modVersion) msg += `, версия мода = ${modVersion}`;
-    if (!mcVersion && !modVersion) msg = "❌ Не удалось извлечь версии из имени файла. Укажите их вручную.";
+    if (!mcVersion && !modVersion) msg = "❌ Не удалось извлечь версии. Укажите вручную.";
     reportDiv.innerHTML = msg;
     resultDiv.classList.remove('hidden');
     return true;
 }
 autoDetectBtn.addEventListener('click', autoDetectVersions);
 
-// ---------- 4. ВЗАИМОДЕЙСТВИЕ С MODRINTH API ----------
+// ---------- 4. ВЗАИМОДЕЙСТВИЕ С API ----------
 async function sha256(file) {
     const buffer = await file.arrayBuffer();
     const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
@@ -137,9 +120,7 @@ async function sha256(file) {
 async function searchModByHash(fileHash) {
     try {
         const response = await fetch(`https://api.modrinth.com/v2/version_file/${fileHash}`);
-        if (response.ok) {
-            return await response.json();
-        }
+        if (response.ok) return await response.json();
     } catch (e) { console.warn("Modrinth hash lookup failed", e); }
     return null;
 }
@@ -156,9 +137,7 @@ async function searchModByName(modName, mcVersion) {
                 if (versionsResp.ok) {
                     const versions = await versionsResp.json();
                     let found = null;
-                    if (mcVersion) {
-                        found = versions.find(v => v.game_versions.includes(mcVersion));
-                    }
+                    if (mcVersion) found = versions.find(v => v.game_versions.includes(mcVersion));
                     if (!found && versions.length) found = versions[0];
                     if (found && found.files.length) {
                         const fileObj = found.files[0];
@@ -217,8 +196,8 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
     const isTrusted = isTrustedMod(file.name);
     let modrinthData = await searchModByHash(report.sha256);
     
+    // Проверка размера (основная)
     if (modrinthData) {
-        // Точное совпадение по хешу
         const officialSize = modrinthData.size;
         if (officialSize !== file.size) {
             report.issues.push(`⚠️ Размер файла не совпадает с официальным (Modrinth). Ожидалось: ${(officialSize/1024).toFixed(2)} KB, получено: ${report.fileSizeStr}`);
@@ -229,7 +208,7 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
             report.verdictClass = "verdict-clean";
         }
     } else {
-        // Не нашли по хешу, пробуем поиск по имени
+        // Не нашли по хешу, ищем по имени
         let identifiedMod = null;
         for (const mod of trustedMods) {
             for (const kw of mod.keywords) {
@@ -266,38 +245,44 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         }
     }
     
-    // Чёрный список (приоритет)
-    if (bannedModPatterns.some(p => p.test(file.name))) {
-        report.issues.push("🔴 ИМЯ ФАЙЛА СОДЕРЖИТ ЗАПРЕЩЁННЫЙ МОД/ЧИТ!");
-        report.verdict = "🔴 ЗАПРЕЩЁННЫЙ МОД / ЧИТ";
-        report.verdictClass = "verdict-banned";
-    }
-    
-    // Анализ JAR (внутренние классы)
-    if (file.name.endsWith('.jar') || file.name.endsWith('.zip')) {
-        try {
-            const zip = await JSZip.loadAsync(file);
-            const fileNames = Object.keys(zip.files);
-            let bannedClasses = 0;
-            let foundBannedNames = [];
-            for (const name of fileNames) {
-                if (bannedModPatterns.some(p => p.test(name.toLowerCase()))) {
-                    bannedClasses++;
-                    if (bannedClasses <= 5) foundBannedNames.push(name);
+    // ЕСЛИ МОД ЛЕГИТИМНЫЙ – ПРОПУСКАЕМ ПРОВЕРКУ ЧЁРНОГО СПИСКА И АНАЛИЗ JAR
+    if (!isTrusted) {
+        // Чёрный список по имени файла (только для нелегитимных)
+        if (bannedModPatterns.some(p => p.test(file.name))) {
+            report.issues.push("🔴 ИМЯ ФАЙЛА СОДЕРЖИТ ЗАПРЕЩЁННЫЙ МОД/ЧИТ!");
+            report.verdict = "🔴 ЗАПРЕЩЁННЫЙ МОД / ЧИТ";
+            report.verdictClass = "verdict-banned";
+        }
+        
+        // Анализ JAR (внутренние классы) – только для нелегитимных
+        if (file.name.endsWith('.jar') || file.name.endsWith('.zip')) {
+            try {
+                const zip = await JSZip.loadAsync(file);
+                const fileNames = Object.keys(zip.files);
+                let bannedClasses = 0;
+                let foundBannedNames = [];
+                for (const name of fileNames) {
+                    if (bannedModPatterns.some(p => p.test(name.toLowerCase()))) {
+                        bannedClasses++;
+                        if (bannedClasses <= 5) foundBannedNames.push(name);
+                    }
                 }
-            }
-            if (bannedClasses > 0) {
-                report.issues.push(`🔴 ВНУТРИ JAR обнаружено ${bannedClasses} классов, связанных с запрещёнными модами: ${foundBannedNames.slice(0,3).join(', ')}${bannedClasses > 3 ? '...' : ''}`);
-                if (report.verdictClass !== "verdict-banned") {
-                    report.verdict = "🔴 ОБНАРУЖЕН ЗАПРЕЩЁННЫЙ КОД";
-                    report.verdictClass = "verdict-banned";
+                if (bannedClasses > 0) {
+                    report.issues.push(`🔴 ВНУТРИ JAR обнаружено ${bannedClasses} классов, связанных с запрещёнными модами: ${foundBannedNames.slice(0,3).join(', ')}${bannedClasses > 3 ? '...' : ''}`);
+                    if (report.verdictClass !== "verdict-banned") {
+                        report.verdict = "🔴 ОБНАРУЖЕН ЗАПРЕЩЁННЫЙ КОД";
+                        report.verdictClass = "verdict-banned";
+                    }
                 }
+            } catch (e) {
+                report.issues.push("⚠️ Не удалось прочитать архив (возможно, повреждён или не ZIP/JAR)");
             }
-        } catch (e) {
-            report.issues.push("⚠️ Не удалось прочитать архив (возможно, повреждён или не ZIP/JAR)");
+        } else {
+            report.issues.push("📦 Файл не является JAR/ZIP – моды Minecraft обычно имеют расширение .jar");
         }
     } else {
-        report.issues.push("📦 Файл не является JAR/ZIP – моды Minecraft обычно имеют расширение .jar");
+        // Для легитимных модов можно добавить уведомление, что проверка читов пропущена
+        report.issues.push("✅ Мод опознан как легитимный, проверка на читы пропущена.");
     }
     
     if (report.verdict === "") {
