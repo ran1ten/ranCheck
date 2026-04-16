@@ -1,5 +1,5 @@
 // ========================
-// ranCheck – финальная версия с поддержкой 1.21.4
+// ranCheck – с реальной проверкой через Modrinth API
 // ========================
 
 const dropArea = document.getElementById('dropArea');
@@ -10,17 +10,15 @@ const mcVersionInput = document.getElementById('mcVersion');
 const modVersionInput = document.getElementById('modVersion');
 const autoDetectBtn = document.getElementById('autoDetectBtn');
 
-// ---------- 1. ЧЁРНЫЙ СПИСОК ЗАПРЕЩЁННЫХ МОДОВ ----------
+// ---------- 1. ЧЁРНЫЙ СПИСОК ----------
 const bannedModPatterns = [
     /chestesp/i, /freecam/i, /autofish/i,
     /autoclicker/i, /clicker/i, /macro/i,
     /tracers/i, /topka\s*size/i, /topkasize/i,
     /topka\s*autocommand/i, /topkaautocommand/i,
     /x-ray\s*entity/i, /xrayentity/i,
-    /invmove/i,
-    /nearplayerwidget/i, /near\s*player/i,
-    /nameprotect/i, /nametag/i,
-    /elytra\s*swap/i, /elytraswap/i,
+    /invmove/i, /nearplayerwidget/i, /near\s*player/i,
+    /nameprotect/i, /nametag/i, /elytra\s*swap/i, /elytraswap/i,
     /minimap/i, /radar/i, /playerradar/i, /entityradar/i,
     /collision\s*fix/i, /collisionfix/i,
     /wurst/i, /impact/i, /aristois/i, /future/i, /vape/i,
@@ -30,56 +28,16 @@ const bannedModPatterns = [
     /auto(click|mine|fish|totem)/i
 ];
 
-// ---------- 2. БАЗА ОФИЦИАЛЬНЫХ МОДОВ (с поддержкой 1.21.4) ----------
+// ---------- 2. ЛОКАЛЬНАЯ БАЗА (FALLBACK) ----------
 const officialModsDB = [
-    {
-        name: "Just Enough Items (JEI)",
-        nameKeywords: ["jei", "justenoughitems"],
-        sizeMin: 1.0 * 1024 * 1024,
-        sizeMax: 3.0 * 1024 * 1024,   // увеличен для новых версий
-        knownHashes: [],
-        supportedMCVersions: ["1.21.4", "1.20.1", "1.19.2", "1.18.2", "1.16.5"],
-        latestModVersion: "17.0.0"
-    },
-    {
-        name: "OptiFine",
-        nameKeywords: ["optifine"],
-        sizeMin: 5.5 * 1024 * 1024,
-        sizeMax: 9.0 * 1024 * 1024,
-        knownHashes: [],
-        supportedMCVersions: ["1.21.4", "1.20.1", "1.19.2", "1.18.2", "1.17.1", "1.16.5", "1.15.2", "1.14.4", "1.12.2"],
-        latestModVersion: "HD_U_I6"
-    },
-    {
-        name: "Sodium",
-        nameKeywords: ["sodium"],
-        sizeMin: 0.8 * 1024 * 1024,
-        sizeMax: 1.8 * 1024 * 1024,
-        knownHashes: [],
-        supportedMCVersions: ["1.21.4", "1.20.1", "1.19.4", "1.19.2", "1.18.2", "1.17.1", "1.16.5"],
-        latestModVersion: "0.5.3"
-    },
-    {
-        name: "Lithium",
-        nameKeywords: ["lithium"],
-        sizeMin: 0.5 * 1024 * 1024,
-        sizeMax: 1.2 * 1024 * 1024,
-        knownHashes: [],
-        supportedMCVersions: ["1.21.4", "1.20.1", "1.19.2", "1.18.2", "1.17.1", "1.16.5"],
-        latestModVersion: "0.11.2"
-    },
-    {
-        name: "Fabric API",
-        nameKeywords: ["fabric-api", "fabricapi", "fabric", "fabric-api-"],
-        sizeMin: 0.4 * 1024 * 1024,
-        sizeMax: 2.5 * 1024 * 1024,   // широкий диапазон для всех версий
-        knownHashes: [],
-        supportedMCVersions: ["1.21.4", "1.20.1", "1.19.2", "1.18.2", "1.17.1", "1.16.5", "1.15.2", "1.14.4"],
-        latestModVersion: "0.92.0"
-    }
+    { name: "Just Enough Items (JEI)", nameKeywords: ["jei", "justenoughitems"] },
+    { name: "OptiFine", nameKeywords: ["optifine"] },
+    { name: "Sodium", nameKeywords: ["sodium"] },
+    { name: "Lithium", nameKeywords: ["lithium"] },
+    { name: "Fabric API", nameKeywords: ["fabric-api", "fabricapi", "fabric"] }
 ];
 
-// ---------- 3. ФУНКЦИИ ДЛЯ РАБОТЫ С ВЕРСИЯМИ ----------
+// ---------- 3. ФУНКЦИИ ВЕРСИЙ ----------
 function isMinecraftVersion(versionStr) {
     if (!versionStr) return false;
     const match = versionStr.match(/^(\d+)\.(\d+)\.(\d+)$/);
@@ -124,9 +82,7 @@ function identifyVersions(filename) {
     }
     if (mcVersion) {
         const otherVersions = candidates.filter(c => c !== mcVersion);
-        if (otherVersions.length > 0) {
-            modVersion = otherVersions[0];
-        }
+        if (otherVersions.length > 0) modVersion = otherVersions[0];
     } else {
         if (candidates.length > 0) modVersion = candidates.join(', ');
     }
@@ -135,25 +91,21 @@ function identifyVersions(filename) {
 
 function autoDetectVersions() {
     const fileName = fileInput.files[0]?.name;
-    if (!fileName) {
-        alert("Сначала загрузите файл");
-        return false;
-    }
+    if (!fileName) { alert("Сначала загрузите файл"); return false; }
     const { mcVersion, modVersion } = identifyVersions(fileName);
     if (mcVersion) mcVersionInput.value = mcVersion;
     if (modVersion) modVersionInput.value = modVersion;
     let msg = `🔍 Извлечено:`;
     if (mcVersion) msg += ` версия Minecraft = ${mcVersion}`;
     if (modVersion) msg += `, версия мода = ${modVersion}`;
-    if (!mcVersion && !modVersion) msg = "❌ Не удалось извлечь версии из имени файла. Укажите их вручную.";
+    if (!mcVersion && !modVersion) msg = "❌ Не удалось извлечь версии. Укажите вручную.";
     reportDiv.innerHTML = msg;
     resultDiv.classList.remove('hidden');
     return true;
 }
-
 autoDetectBtn.addEventListener('click', autoDetectVersions);
 
-// ---------- 4. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ----------
+// ---------- 4. ВЗАИМОДЕЙСТВИЕ С MODRINTH API ----------
 async function sha256(file) {
     const buffer = await file.arrayBuffer();
     const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
@@ -161,54 +113,52 @@ async function sha256(file) {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function identifyModByName(filename) {
-    const lowerName = filename.toLowerCase();
-    for (const mod of officialModsDB) {
-        for (const kw of mod.nameKeywords) {
-            if (lowerName.includes(kw)) {
-                return mod;
-            }
+// Поиск файла по хешу на Modrinth
+async function searchModByHash(fileHash) {
+    try {
+        const response = await fetch(`https://api.modrinth.com/v2/version_file/${fileHash}`);
+        if (response.ok) {
+            const data = await response.json();
+            return data; // содержит размер, имя файла, версию и т.д.
         }
-    }
+    } catch (e) { console.warn("Modrinth hash lookup failed", e); }
     return null;
 }
 
-function checkVersionCompatibility(mod, mcVersion, modVersion) {
-    const issues = [];
-    if (mcVersion && mod.supportedMCVersions && !mod.supportedMCVersions.includes(mcVersion)) {
-        issues.push(`⚠️ Версия Minecraft ${mcVersion} не указана в официально поддерживаемых для ${mod.name} (поддерживаются: ${mod.supportedMCVersions.join(', ')})`);
-    }
-    if (modVersion && mod.latestModVersion && modVersion !== mod.latestModVersion) {
-        issues.push(`📢 Версия мода ${modVersion} устарела. Актуальная версия: ${mod.latestModVersion}`);
-    }
-    return issues;
-}
-
-function checkAgainstOfficialDB(fileName, fileSize, hash, mcVersion, modVersion) {
-    const identifiedMod = identifyModByName(fileName);
-    if (!identifiedMod) {
-        return { match: false, renamed: false, sizeMismatch: false, modName: null };
-    }
-    const sizeMatches = (fileSize >= identifiedMod.sizeMin && fileSize <= identifiedMod.sizeMax);
-    const hashMatches = identifiedMod.knownHashes.includes(hash);
-    if (hashMatches || sizeMatches) {
-        const versionIssues = checkVersionCompatibility(identifiedMod, mcVersion, modVersion);
-        return {
-            match: true,
-            modName: identifiedMod.name,
-            reason: hashMatches ? "hash" : "size",
-            sizeMatches: sizeMatches,
-            hashMatches: hashMatches,
-            versionIssues: versionIssues
-        };
-    } else {
-        return {
-            match: false,
-            modName: identifiedMod.name,
-            sizeMismatch: true,
-            expectedSize: `${(identifiedMod.sizeMin/1024/1024).toFixed(1)}-${(identifiedMod.sizeMax/1024/1024).toFixed(1)} MB`
-        };
-    }
+// Поиск мода по имени (для fallback)
+async function searchModByName(modName, mcVersion) {
+    try {
+        const searchQuery = encodeURIComponent(modName);
+        const response = await fetch(`https://api.modrinth.com/v2/search?query=${searchQuery}&limit=1`);
+        if (response.ok) {
+            const data = await response.json();
+            if (data.hits && data.hits.length > 0) {
+                const projectId = data.hits[0].project_id;
+                // Получаем версии для этого проекта
+                const versionsResp = await fetch(`https://api.modrinth.com/v2/project/${projectId}/version`);
+                if (versionsResp.ok) {
+                    const versions = await versionsResp.json();
+                    // Ищем версию, подходящую под версию Minecraft
+                    let found = null;
+                    if (mcVersion) {
+                        found = versions.find(v => v.game_versions.includes(mcVersion));
+                    }
+                    if (!found && versions.length) found = versions[0];
+                    if (found) {
+                        // Ищем файл (обычно первый в списке)
+                        const fileObj = found.files[0];
+                        return {
+                            fileName: fileObj.filename,
+                            size: fileObj.size,
+                            version: found.version_number,
+                            mcVersions: found.game_versions
+                        };
+                    }
+                }
+            }
+        }
+    } catch (e) { console.warn("Modrinth search failed", e); }
+    return null;
 }
 
 // ---------- 5. ГЛАВНАЯ ФУНКЦИЯ АНАЛИЗА ----------
@@ -226,6 +176,7 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
 
     report.sha256 = await sha256(file);
     
+    // Определяем версии
     let mcVersion = manualMcVersion;
     let modVersion = manualModVersion;
     if (!mcVersion && !modVersion) {
@@ -239,45 +190,72 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         if (modVersion) report.issues.push(`📌 Версия мода указана вручную: ${modVersion}`);
     }
     
-    const officialCheck = checkAgainstOfficialDB(file.name, file.size, report.sha256, mcVersion, modVersion);
+    // Шаг 1: Поиск по хешу в Modrinth
+    let modrinthData = await searchModByHash(report.sha256);
+    let officialSize = null;
+    let officialName = null;
     
-    if (officialCheck.match) {
-        report.verdict = "✅ Официальный мод (подлинник)";
-        report.verdictClass = "verdict-clean";
-        report.issues.push(`🔹 Мод опознан как ${officialCheck.modName} (совпадение по ${officialCheck.reason === 'hash' ? 'хешу' : 'размеру'})`);
-        if (officialCheck.versionIssues && officialCheck.versionIssues.length) {
-            report.issues.push(...officialCheck.versionIssues);
-            if (officialCheck.versionIssues.some(i => i.includes('не указана в официально поддерживаемых'))) {
-                report.verdict = "⚠️ Совместимость под вопросом (версия Minecraft не поддерживается)";
-                report.verdictClass = "verdict-warning";
-            }
+    if (modrinthData) {
+        // Нашли точное совпадение по хешу
+        officialSize = modrinthData.size;
+        officialName = modrinthData.name;
+        report.issues.push(`✅ Найден в официальном репозитории Modrinth: ${officialName}`);
+        if (officialSize !== file.size) {
+            report.issues.push(`⚠️ Размер файла не совпадает с официальным! Ожидалось: ${(officialSize/1024).toFixed(2)} KB, получено: ${report.fileSizeStr}`);
+            report.verdict = "⚠️ ФАЙЛ ПОВРЕЖДЁН ИЛИ ИЗМЕНЁН";
+            report.verdictClass = "verdict-warning";
+        } else {
+            report.verdict = "✅ Официальный мод (подлинник, проверено через Modrinth)";
+            report.verdictClass = "verdict-clean";
         }
     } else {
-        if (officialCheck.modName) {
-            if (officialCheck.sizeMismatch) {
-                report.issues.push(`⚠️ РАЗМЕР НЕ СООТВЕТСТВУЕТ официальному диапазону для ${officialCheck.modName} (ожидается ${officialCheck.expectedSize})`);
-                report.verdict = "⚠️ ИЗМЕНЁННЫЙ / НЕОФИЦИАЛЬНЫЙ ФАЙЛ";
-                report.verdictClass = "verdict-warning";
+        // Шаг 2: Попробуем найти мод по имени (из локальной базы) + версии MC
+        let identifiedMod = null;
+        for (const mod of officialModsDB) {
+            for (const kw of mod.nameKeywords) {
+                if (file.name.toLowerCase().includes(kw)) {
+                    identifiedMod = mod;
+                    break;
+                }
+            }
+            if (identifiedMod) break;
+        }
+        
+        if (identifiedMod && mcVersion) {
+            report.issues.push(`🔍 Ищем актуальные данные для ${identifiedMod.name} на Modrinth...`);
+            const apiData = await searchModByName(identifiedMod.name, mcVersion);
+            if (apiData) {
+                officialSize = apiData.size;
+                officialName = apiData.fileName;
+                report.issues.push(`📦 Найдена версия для ${mcVersion}: ${apiData.version}`);
+                if (officialSize !== file.size) {
+                    report.issues.push(`⚠️ Размер не совпадает! Официальный размер: ${(officialSize/1024).toFixed(2)} KB, ваш: ${report.fileSizeStr}`);
+                    report.verdict = "⚠️ РАЗМЕР НЕ СООТВЕТСТВУЕТ ОФИЦИАЛЬНОМУ";
+                    report.verdictClass = "verdict-warning";
+                } else {
+                    report.verdict = "✅ Размер совпадает с официальным (Modrinth)";
+                    report.verdictClass = "verdict-clean";
+                }
             } else {
-                report.issues.push(`🔍 Мод похож на ${officialCheck.modName}, но не прошёл проверку.`);
-                report.verdict = "⚠️ НЕОФИЦИАЛЬНАЯ ВЕРСИЯ МОДА";
+                report.issues.push(`❌ Не удалось получить данные с Modrinth для ${identifiedMod.name} (возможно, мод не опубликован там). Используем локальную эвристику.`);
+                report.verdict = "⚠️ НЕИЗВЕСТНЫЙ МОД (нет данных в API)";
                 report.verdictClass = "verdict-warning";
             }
         } else {
-            report.issues.push(`🔍 Неизвестный файл – не найден в базе официальных модов`);
+            report.issues.push(`❌ Мод не опознан и не найден по хешу. Проверьте имя файла или добавьте мод вручную.`);
             report.verdict = "⚠️ НЕИЗВЕСТНЫЙ МОД (требуется ручная проверка)";
             report.verdictClass = "verdict-warning";
         }
     }
     
-    // Чёрный список по имени
+    // Чёрный список (всегда)
     if (bannedModPatterns.some(p => p.test(file.name))) {
         report.issues.push("🔴 ИМЯ ФАЙЛА СОДЕРЖИТ ЗАПРЕЩЁННЫЙ МОД/ЧИТ!");
         report.verdict = "🔴 ЗАПРЕЩЁННЫЙ МОД / ЧИТ";
         report.verdictClass = "verdict-banned";
     }
     
-    // Анализ JAR
+    // Анализ JAR (внутренние классы)
     if (file.name.endsWith('.jar') || file.name.endsWith('.zip')) {
         try {
             const zip = await JSZip.loadAsync(file);
@@ -285,8 +263,7 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
             let bannedClasses = 0;
             let foundBannedNames = [];
             for (const name of fileNames) {
-                const lowerName = name.toLowerCase();
-                if (bannedModPatterns.some(p => p.test(lowerName))) {
+                if (bannedModPatterns.some(p => p.test(name.toLowerCase()))) {
                     bannedClasses++;
                     if (bannedClasses <= 5) foundBannedNames.push(name);
                 }
@@ -301,8 +278,6 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         } catch (e) {
             report.issues.push("⚠️ Не удалось прочитать архив (возможно, повреждён или не ZIP/JAR)");
         }
-    } else {
-        report.issues.push("📦 Файл не является JAR/ZIP – моды Minecraft обычно имеют расширение .jar");
     }
     
     if (report.verdict === "") {
@@ -325,7 +300,7 @@ async function handleFile(file) {
     if (!file) return;
     const manualMc = mcVersionInput.value.trim();
     const manualMod = modVersionInput.value.trim();
-    reportDiv.innerHTML = "⏳ Анализируем мод Minecraft... (распаковка и проверка могут занять несколько секунд)";
+    reportDiv.innerHTML = "⏳ Анализируем мод Minecraft (запрос к Modrinth API)...";
     resultDiv.classList.remove('hidden');
     try {
         const result = await analyzeMod(file, manualMc, manualMod);
@@ -342,13 +317,8 @@ async function handleFile(file) {
 // ---------- 7. СОБЫТИЯ ----------
 dropArea.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
-dropArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropArea.style.background = 'rgba(76,154,255,0.2)';
-});
-dropArea.addEventListener('dragleave', () => {
-    dropArea.style.background = '';
-});
+dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.style.background = 'rgba(76,154,255,0.2)'; });
+dropArea.addEventListener('dragleave', () => { dropArea.style.background = ''; });
 dropArea.addEventListener('drop', (e) => {
     e.preventDefault();
     dropArea.style.background = '';
