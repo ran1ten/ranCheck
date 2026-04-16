@@ -48,6 +48,48 @@ h1 {
     border-color: #7ab3ff;
 }
 
+.version-inputs {
+    background: rgba(0,0,0,0.3);
+    border-radius: 20px;
+    padding: 1rem;
+    margin: 1rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: center;
+    align-items: center;
+}
+
+.version-inputs label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.version-inputs input {
+    background: #0f1219;
+    border: 1px solid #4c9aff;
+    border-radius: 20px;
+    padding: 0.3rem 0.8rem;
+    color: white;
+    font-family: monospace;
+}
+
+#autoDetectBtn {
+    background: #4c9aff;
+    border: none;
+    border-radius: 20px;
+    padding: 0.3rem 1rem;
+    color: white;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+#autoDetectBtn:hover {
+    background: #7ab3ff;
+}
+
 .result {
     background: #0f1219;
     border-radius: 20px;
