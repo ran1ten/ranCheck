@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HolyCheck Lite – проверка модов</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🛡️ HolyCheck Lite</h1>
+        <p>Загрузите файл мода для быстрой проверки (имитация)</p>
+        
+        <div class="upload-area" id="dropArea">
+            <p>📂 Перетащите файл сюда или нажмите для выбора</p>
+            <input type="file" id="fileInput" hidden>
+        </div>
+
+        <div id="result" class="result hidden">
+            <h2>Результат проверки</h2>
+            <p id="report"></p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
