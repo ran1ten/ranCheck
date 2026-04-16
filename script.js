@@ -33,7 +33,7 @@ const trustedMods = [
     { name: "Fabric API", keywords: ["fabric-api", "fabricapi", "fabric"] },
     { name: "Just Enough Items (JEI)", keywords: ["jei", "justenoughitems"] },
     { name: "OptiFine", keywords: ["optifine"] },
-    { name: "Sodium", keywords: ["sodium"] },
+    { name: "Sodium", nameKeywords: ["sodium", "sodium-fabric"]},
     { name: "Lithium", keywords: ["lithium"] },
     { name: "Phosphor", keywords: ["phosphor"] },
     { name: "Iris Shaders", keywords: ["iris", "irisshaders"] },
