@@ -9,27 +9,33 @@
 <body>
     <div class="container">
         <h1>🛡️ ranCheck</h1>
-        <p>Загрузите мод Minecraft (.jar) для проверки на читы и подлинность</p>
+        <p>Загрузите моды Minecraft (.jar) для проверки (до 100 файлов)</p>
         
         <div class="upload-area" id="dropArea">
-            <p>📂 Перетащите файл сюда или нажмите для выбора</p>
-            <input type="file" id="fileInput" hidden accept=".jar,.zip">
+            <p>📂 Перетащите файлы сюда или нажмите для выбора</p>
+            <input type="file" id="fileInput" hidden accept=".jar,.zip" multiple>
         </div>
 
         <div class="version-inputs">
             <label>Версия Minecraft (опционально): 
-                <input type="text" id="mcVersion" placeholder="например, 1.20.1">
+                <input type="text" id="mcVersion" placeholder="например, 1.21.4">
             </label>
             <label>Версия мода (опционально): 
-                <input type="text" id="modVersion" placeholder="например, 15.8.5.12">
+                <input type="text" id="modVersion" placeholder="например, 0.92.0">
             </label>
             <button id="autoDetectBtn">🔍 Извлечь версии из имени</button>
         </div>
 
-        <div id="result" class="result hidden">
-            <h2>Результат проверки</h2>
-            <div id="report"></div>
+        <!-- Прогресс-бар -->
+        <div id="progressArea" class="progress-area hidden">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill"></div>
+            </div>
+            <p id="progressText">Готово 0 / 0</p>
         </div>
+
+        <!-- Результаты -->
+        <div id="resultsContainer" class="results-container"></div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
