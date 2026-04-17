@@ -1,5 +1,5 @@
 // ========================
-// ranCheck – с определением названия мода и проверкой веса
+// ranCheck – определение имени мода по символам - или _
 // ========================
 
 const dropArea = document.getElementById('dropArea');
@@ -42,7 +42,7 @@ const trustedMods = [
     { name: "Indium", keywords: ["indium"] }
 ];
 
-// ---------- 3. ФУНКЦИИ РАСПОЗНАВАНИЯ ВЕРСИЙ И НАЗВАНИЯ ----------
+// ---------- 3. ФУНКЦИИ РАСПОЗНАВАНИЯ ВЕРСИЙ ----------
 function isMinecraftVersion(versionStr) {
     if (!versionStr) return false;
     const match = versionStr.match(/^(\d+)\.(\d+)\.(\d+)$/);
@@ -93,19 +93,27 @@ function identifyVersions(filename) {
     return { mcVersion, modVersion };
 }
 
-function identifyModName(filename) {
-    const lowerName = filename.toLowerCase();
-    for (const mod of trustedMods) {
-        for (const kw of mod.keywords) {
-            if (lowerName.includes(kw)) return mod.name;
-        }
+// НОВАЯ ФУНКЦИЯ: определение имени мода по первому дефису или подчёркиванию
+function identifyModNameBySeparator(filename, mcVersion) {
+    // Удаляем расширение .jar/.zip
+    let nameWithoutExt = filename.replace(/\.(jar|zip)$/i, '');
+    // Удаляем найденную версию Minecraft из имени (чтобы она не мешала)
+    if (mcVersion) {
+        nameWithoutExt = nameWithoutExt.replace(mcVersion, '');
     }
-    // Если не нашли в trustedMods, пробуем извлечь первое слово (до дефиса/подчёркивания)
-    const match = filename.match(/^([a-zA-Z]+[-_]?[a-zA-Z]*)/);
-    if (match && match[1].length > 2) return match[1];
+    // Ищем первый символ - или _
+    const separatorMatch = nameWithoutExt.match(/^([^\-_]+)[\-_]/);
+    if (separatorMatch && separatorMatch[1].length > 1) {
+        // Возвращаем всё, что до первого - или _
+        return separatorMatch[1].trim();
+    }
+    // Если разделитель не найден, пробуем взять первое слово (до цифры или точки)
+    const wordMatch = nameWithoutExt.match(/^([a-zA-Z]+)/);
+    if (wordMatch && wordMatch[1].length > 1) return wordMatch[1];
     return null;
 }
 
+// Функция автоопределения (без изменений)
 function autoDetectVersions() {
     const fileName = fileInput.files[0]?.name;
     if (!fileName) { alert("Сначала загрузите файл"); return false; }
@@ -141,16 +149,26 @@ async function searchModByHash(fileHash) {
 async function searchModByName(modName, mcVersion) {
     try {
         const searchQuery = encodeURIComponent(modName);
-        const response = await fetch(`https://api.modrinth.com/v2/search?query=${searchQuery}&limit=1`);
+        const response = await fetch(`https://api.modrinth.com/v2/search?query=${searchQuery}&limit=5`);
         if (response.ok) {
             const data = await response.json();
             if (data.hits && data.hits.length > 0) {
-                const projectId = data.hits[0].project_id;
+                // Ищем наиболее подходящий проект (точное совпадение или начинается с искомого)
+                let bestHit = data.hits[0];
+                for (const hit of data.hits) {
+                    if (hit.slug.toLowerCase() === modName.toLowerCase() || hit.title.toLowerCase() === modName.toLowerCase()) {
+                        bestHit = hit;
+                        break;
+                    }
+                }
+                const projectId = bestHit.project_id;
                 const versionsResp = await fetch(`https://api.modrinth.com/v2/project/${projectId}/version`);
                 if (versionsResp.ok) {
                     const versions = await versionsResp.json();
                     let found = null;
-                    if (mcVersion) found = versions.find(v => v.game_versions.includes(mcVersion));
+                    if (mcVersion) {
+                        found = versions.find(v => v.game_versions.includes(mcVersion));
+                    }
                     if (!found && versions.length) found = versions[0];
                     if (found && found.files.length) {
                         const fileObj = found.files[0];
@@ -158,7 +176,8 @@ async function searchModByName(modName, mcVersion) {
                             fileName: fileObj.filename,
                             size: fileObj.size,
                             version: found.version_number,
-                            mcVersions: found.game_versions
+                            mcVersions: found.game_versions,
+                            projectName: bestHit.title
                         };
                     }
                 }
@@ -217,10 +236,23 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         if (modVersion) report.issues.push(`📌 Версия мода указана вручную: ${modVersion}`);
     }
     
-    // Определяем название мода (по ключевым словам или из имени файла)
-    const detectedModName = identifyModName(file.name);
-    if (detectedModName && !getTrustedModName(file.name)) {
-        report.issues.push(`🔍 Определено название мода: ${detectedModName}`);
+    // НОВЫЙ АЛГОРИТМ ОПРЕДЕЛЕНИЯ ИМЕНИ МОДА
+    let detectedModName = null;
+    if (mcVersion) {
+        detectedModName = identifyModNameBySeparator(file.name, mcVersion);
+        if (detectedModName) {
+            report.issues.push(`🔍 Определено название мода по разделителю: ${detectedModName}`);
+        }
+    }
+    // Fallback: если не определили, пробуем через trustedMods
+    if (!detectedModName) {
+        const trustedName = getTrustedModName(file.name);
+        if (trustedName) detectedModName = trustedName;
+    }
+    // Если всё ещё нет, пробуем взять первое слово из имени (до точки или дефиса)
+    if (!detectedModName) {
+        const firstWord = file.name.match(/^[a-zA-Z]+/);
+        if (firstWord) detectedModName = firstWord[0];
     }
     
     const isTrusted = isTrustedMod(file.name);
@@ -264,12 +296,11 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         return report;
     }
     
-    // ===== 2. ДЛЯ ЛЕГИТИМНЫХ МОДОВ – сразу зелёный, но проверяем размер по API =====
+    // ===== 2. ДЛЯ ЛЕГИТИМНЫХ МОДОВ – сразу зелёный, проверяем вес =====
     if (isTrusted) {
         report.verdict = `✅ Легитимный мод (${trustedName})`;
         report.verdictClass = "verdict-clean";
         
-        // Пытаемся получить ожидаемый размер для этого мода и версии MC
         let expectedSize = null;
         let apiSource = null;
         let modrinthData = await searchModByHash(report.sha256);
@@ -285,7 +316,7 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         }
         
         if (expectedSize !== null) {
-            if (Math.abs(expectedSize - file.size) > 1024) { // разница больше 1KB
+            if (Math.abs(expectedSize - file.size) > 1024) {
                 report.issues.push(`ℹ️ Вес файла (${report.fileSizeStr}) отличается от официального (${(expectedSize/1024).toFixed(2)} KB) по ${apiSource}. Это нормально для разных версий или сборок.`);
             } else {
                 report.issues.push(`✅ Вес файла совпадает с официальным (${(expectedSize/1024).toFixed(2)} KB) по ${apiSource}.`);
@@ -304,7 +335,7 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         return report;
     }
     
-    // ===== 3. ДЛЯ НЕЛЕГИТИМНЫХ МОДОВ – ПОЛНАЯ ПРОВЕРКА =====
+    // ===== 3. ДЛЯ НЕЛЕГИТИМНЫХ МОДОВ – ПОЛНАЯ ПРОВЕРКА С ИСПОЛЬЗОВАНИЕМ НОВОГО ИМЕНИ =====
     let modrinthData = await searchModByHash(report.sha256);
     if (modrinthData) {
         const officialSize = modrinthData.size;
@@ -317,7 +348,7 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
             report.verdictClass = "verdict-clean";
         }
     } else {
-        // Если не нашли по хешу, пробуем определить по названию и версии
+        // Если не нашли по хешу, пробуем по определённому названию и версии
         if (detectedModName && mcVersion) {
             const apiData = await searchModByName(detectedModName, mcVersion);
             if (apiData) {
