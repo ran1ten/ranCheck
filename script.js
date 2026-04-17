@@ -1,5 +1,5 @@
 // ========================
-// ranCheck – множественная загрузка (до 100 файлов)
+// ranCheck – множественная загрузка, улучшенное определение имени мода
 // ========================
 
 const dropArea = document.getElementById('dropArea');
@@ -95,6 +95,7 @@ function identifyVersions(filename) {
     return { mcVersion, modVersion };
 }
 
+// НОВАЯ ФУНКЦИЯ: определяет имя мода по правилу "до разделителя, после которого цифра"
 function identifyModName(filename) {
     // 1. Сначала пробуем найти по ключевым словам из trustedMods
     const lowerName = filename.toLowerCase();
@@ -103,13 +104,20 @@ function identifyModName(filename) {
             if (lowerName.includes(kw)) return mod.name;
         }
     }
-    // 2. Если не нашли, ищем первый дефис или подчёркивание и берём всё до него
-    const match = filename.match(/^([^_-]+)/);
-    if (match && match[1].length > 2) return match[1];
+    
+    // 2. Ищем первый дефис или подчёркивание, после которого идёт цифра (начало версии)
+    const match = filename.match(/^([^_-]+)[_-](\d)/);
+    if (match && match[1].length > 1) {
+        return match[1]; // имя до разделителя
+    }
+    
+    // 3. Если не нашли, пробуем взять первое слово (до любого дефиса/подчёркивания)
+    const fallbackMatch = filename.match(/^([^_-]+)/);
+    if (fallbackMatch && fallbackMatch[1].length > 2) return fallbackMatch[1];
+    
     return null;
 }
 
-// Автоопределение версий (для активного файла – только для первого загруженного)
 function autoDetectVersions() {
     if (fileInput.files.length === 0) {
         alert("Сначала загрузите хотя бы один файл");
@@ -123,7 +131,6 @@ function autoDetectVersions() {
     if (mcVersion) msg += ` версия Minecraft = ${mcVersion}`;
     if (modVersion) msg += `, версия мода = ${modVersion}`;
     if (!mcVersion && !modVersion) msg = "❌ Не удалось извлечь версии. Укажите вручную.";
-    // Временно показываем сообщение в консоли или в resultsContainer (не обязательно)
     console.log(msg);
     return true;
 }
@@ -195,7 +202,7 @@ function getTrustedModName(filename) {
     return null;
 }
 
-// ---------- 5. АНАЛИЗ ОДНОГО ФАЙЛА (возвращает объект отчёта) ----------
+// ---------- 5. АНАЛИЗ ОДНОГО ФАЙЛА ----------
 async function analyzeOneMod(file, manualMcVersion, manualModVersion) {
     const report = {
         fileName: file.name,
@@ -231,7 +238,7 @@ async function analyzeOneMod(file, manualMcVersion, manualModVersion) {
     const isTrusted = isTrustedMod(file.name);
     const trustedName = getTrustedModName(file.name);
     
-    // 1. Проверка внутренностей на читы (только для недоверенных)
+    // Проверка внутренностей на читы (только для недоверенных)
     let bannedInside = false;
     let bannedClassesList = [];
     if (!isTrusted && (file.name.endsWith('.jar') || file.name.endsWith('.zip'))) {
@@ -262,7 +269,7 @@ async function analyzeOneMod(file, manualMcVersion, manualModVersion) {
         return report;
     }
     
-    // 2. Легитимный мод – зелёный, вес проверяем информативно
+    // Легитимный мод
     if (isTrusted) {
         report.verdict = `✅ Легитимный мод (${trustedName})`;
         report.verdictClass = "verdict-clean";
@@ -292,7 +299,7 @@ async function analyzeOneMod(file, manualMcVersion, manualModVersion) {
         return report;
     }
     
-    // 3. Неизвестный мод – полная проверка
+    // Неизвестный мод
     let modrinthData = await searchModByHash(report.sha256);
     if (modrinthData) {
         const officialSize = modrinthData.size;
@@ -340,7 +347,7 @@ async function processMultipleFiles(files, manualMc, manualMod) {
         alert("Максимум 100 файлов за раз. Выберите меньше.");
         return;
     }
-    resultsContainer.innerHTML = ""; // очистить старые результаты
+    resultsContainer.innerHTML = "";
     progressArea.classList.remove('hidden');
     progressFill.style.width = "0%";
     progressText.innerText = `Готово 0 / ${files.length}`;
@@ -348,7 +355,6 @@ async function processMultipleFiles(files, manualMc, manualMod) {
     let processed = 0;
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        // Создаём карточку результата (пока с надписью "Загрузка...")
         const card = document.createElement('div');
         card.className = 'result-card';
         card.id = `result-${Date.now()}-${i}`;
@@ -360,7 +366,6 @@ async function processMultipleFiles(files, manualMc, manualMod) {
         
         try {
             const report = await analyzeOneMod(file, manualMc, manualMod);
-            // Обновляем карточку
             card.innerHTML = `
                 <div class="verdict ${report.verdictClass}">${escapeHtml(report.verdict)}</div>
                 <div class="details">
@@ -381,7 +386,6 @@ async function processMultipleFiles(files, manualMc, manualMod) {
         const percent = (processed / files.length) * 100;
         progressFill.style.width = `${percent}%`;
         progressText.innerText = `Готово ${processed} / ${files.length}`;
-        // Небольшая задержка, чтобы не забанить API (но не обязательно)
         await new Promise(r => setTimeout(r, 50));
     }
     progressText.innerText = `Готово ${files.length} / ${files.length} ✅`;
@@ -400,7 +404,6 @@ function escapeHtml(str) {
     });
 }
 
-// ---------- 7. ОБРАБОТЧИК ЗАГРУЗКИ ----------
 function handleFiles(fileList) {
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList).filter(f => f.name.endsWith('.jar') || f.name.endsWith('.zip'));
@@ -413,12 +416,8 @@ function handleFiles(fileList) {
     processMultipleFiles(files, manualMc, manualMod);
 }
 
-fileInput.addEventListener('change', (e) => {
-    handleFiles(e.target.files);
-});
-
+fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 dropArea.addEventListener('click', () => fileInput.click());
-
 dropArea.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropArea.style.background = 'rgba(76,154,255,0.2)';
