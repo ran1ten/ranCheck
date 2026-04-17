@@ -32,7 +32,7 @@ const bannedModPatterns = [
 
 // ---------- 2. ЛЕГИТИМНЫЕ МОДЫ ----------
 const trustedMods = [
-    { name: "Fabric API", keywords: ["fabric-api", "fabricapi", "fabric"] },
+    { name: "Fabric API", keywords: ["fabric-api", "fabricapi"] },
     { name: "Sodium", keywords: ["sodium", "sodium-fabric"] },
     { name: "Lithium", keywords: ["lithium"] },
     { name: "Just Enough Items (JEI)", keywords: ["jei", "justenoughitems"] },
@@ -41,8 +41,7 @@ const trustedMods = [
     { name: "Phosphor", keywords: ["phosphor"] },
     { name: "Starlight", keywords: ["starlight"] },
     { name: "Continuity", keywords: ["continuity"] },
-    { name: "Indium", keywords: ["indium"] },
-    { name: "Fullbright", keywords: ["fullbright", "nightvision", "gamma"] }
+    { name: "Indium", keywords: ["indium"] }
 ];
 
 // ---------- 3. ФУНКЦИИ ОПРЕДЕЛЕНИЯ ВЕРСИЙ ----------
