@@ -41,7 +41,8 @@ const trustedMods = [
     { name: "Phosphor", keywords: ["phosphor"] },
     { name: "Starlight", keywords: ["starlight"] },
     { name: "Continuity", keywords: ["continuity"] },
-    { name: "Indium", keywords: ["indium"] }
+    { name: "Indium", keywords: ["indium"] },
+    { name: "Fullbright", keywords: ["fullbright", "nightvision", "gamma"] }
 ];
 
 // ---------- 3. ФУНКЦИИ ОПРЕДЕЛЕНИЯ ВЕРСИЙ ----------
