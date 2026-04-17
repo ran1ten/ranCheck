@@ -1,5 +1,5 @@
 // ========================
-// ranCheck – легитимные моды не вызывают ошибок по размеру
+// ranCheck – проверка только внутренностей JAR (не имени файла)
 // ========================
 
 const dropArea = document.getElementById('dropArea');
@@ -10,7 +10,7 @@ const mcVersionInput = document.getElementById('mcVersion');
 const modVersionInput = document.getElementById('modVersion');
 const autoDetectBtn = document.getElementById('autoDetectBtn');
 
-// ---------- 1. ЧЁРНЫЙ СПИСОК ----------
+// ---------- 1. ЧЁРНЫЙ СПИСОК (для содержимого JAR) ----------
 const bannedModPatterns = [
     /chestesp/i, /freecam/i, /autofish/i,
     /autoclicker/i, /clicker/i, /macro/i,
@@ -207,13 +207,36 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
     const isTrusted = isTrustedMod(file.name);
     const trustedName = getTrustedModName(file.name);
     
-    // Проверка чёрного списка (имеет высший приоритет)
-    const isBanned = bannedModPatterns.some(p => p.test(file.name));
-    if (isBanned) {
-        report.issues.push("🔴 ИМЯ ФАЙЛА СОДЕРЖИТ ЗАПРЕЩЁННЫЙ МОД/ЧИТ!");
-        report.verdict = "🔴 ЗАПРЕЩЁННЫЙ МОД / ЧИТ";
+    // ===== 1. СНАЧАЛА ПРОВЕРКА ВНУТРЕННОСТЕЙ JAR (независимо от легитимности, но для легитимных пропускаем) =====
+    let bannedInside = false;
+    let bannedClassesList = [];
+    
+    if (!isTrusted && (file.name.endsWith('.jar') || file.name.endsWith('.zip'))) {
+        try {
+            const zip = await JSZip.loadAsync(file);
+            const fileNames = Object.keys(zip.files);
+            for (const name of fileNames) {
+                // Проверяем только .class файлы
+                if (name.endsWith('.class')) {
+                    const lowerName = name.toLowerCase();
+                    if (bannedModPatterns.some(p => p.test(lowerName))) {
+                        bannedInside = true;
+                        if (bannedClassesList.length < 10) bannedClassesList.push(name);
+                    }
+                }
+            }
+            if (bannedInside) {
+                report.issues.push(`🔴 ВНУТРИ JAR обнаружены классы, связанные с запрещёнными читами: ${bannedClassesList.slice(0,5).join(', ')}${bannedClassesList.length > 5 ? '...' : ''}`);
+            }
+        } catch (e) {
+            report.issues.push("⚠️ Не удалось прочитать архив (возможно, повреждён или не ZIP/JAR)");
+        }
+    }
+    
+    // Если внутри найден чит – сразу красный вердикт, остальные проверки не нужны
+    if (bannedInside) {
+        report.verdict = "🔴 ОБНАРУЖЕН ЗАПРЕЩЁННЫЙ КОД (чит-клиент)";
         report.verdictClass = "verdict-banned";
-        // Для забаненных модов всё остальное не проверяем
         report.details = `
             📄 Имя: ${report.fileName}<br>
             📦 Размер: ${report.fileSizeStr}<br>
@@ -224,14 +247,13 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         return report;
     }
     
-    // Если мод легитимный – сразу ставим зелёный вердикт, а проверки размера делаем информационными
+    // ===== 2. ДЛЯ ЛЕГИТИМНЫХ МОДОВ – сразу зелёный, размер только информативно =====
     if (isTrusted) {
         report.verdict = `✅ Легитимный мод (${trustedName})`;
         report.verdictClass = "verdict-clean";
-        // Дополнительно проверим размер через API (только для информации)
+        // Информационная проверка размера
         let modrinthData = await searchModByHash(report.sha256);
         if (!modrinthData && mcVersion) {
-            // Попробуем найти по имени
             modrinthData = await searchModByName(trustedName, mcVersion);
         }
         if (modrinthData) {
@@ -244,7 +266,6 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         } else {
             report.issues.push(`ℹ️ Не удалось сверить размер с Modrinth (мод не найден в API). Это не страшно, мод остаётся легитимным.`);
         }
-        // Для легитимных модов пропускаем проверку внутренних классов (чтобы не было ложных срабатываний)
         report.details = `
             📄 Имя: ${report.fileName}<br>
             📦 Размер: ${report.fileSizeStr}<br>
@@ -255,7 +276,7 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         return report;
     }
     
-    // ---------- ДЛЯ НЕЛЕГИТИМНЫХ (НЕИЗВЕСТНЫХ) МОДОВ ПОЛНАЯ ПРОВЕРКА ----------
+    // ===== 3. ДЛЯ НЕЛЕГИТИМНЫХ МОДОВ – ПОЛНАЯ ПРОВЕРКА =====
     let modrinthData = await searchModByHash(report.sha256);
     if (modrinthData) {
         const officialSize = modrinthData.size;
@@ -268,35 +289,9 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
             report.verdictClass = "verdict-clean";
         }
     } else {
-        // Не нашли по хешу – неизвестный мод
         report.issues.push(`❌ Мод не опознан и не найден по хешу.`);
         report.verdict = "⚠️ НЕИЗВЕСТНЫЙ МОД (требуется ручная проверка)";
         report.verdictClass = "verdict-warning";
-        
-        // Анализ JAR только для неизвестных модов (чтобы не грузить легитимные)
-        if (file.name.endsWith('.jar') || file.name.endsWith('.zip')) {
-            try {
-                const zip = await JSZip.loadAsync(file);
-                const fileNames = Object.keys(zip.files);
-                let bannedClasses = 0;
-                let foundBannedNames = [];
-                for (const name of fileNames) {
-                    if (bannedModPatterns.some(p => p.test(name.toLowerCase()))) {
-                        bannedClasses++;
-                        if (bannedClasses <= 5) foundBannedNames.push(name);
-                    }
-                }
-                if (bannedClasses > 0) {
-                    report.issues.push(`🔴 ВНУТРИ JAR обнаружено ${bannedClasses} классов, связанных с запрещёнными модами: ${foundBannedNames.slice(0,3).join(', ')}${bannedClasses > 3 ? '...' : ''}`);
-                    report.verdict = "🔴 ОБНАРУЖЕН ЗАПРЕЩЁННЫЙ КОД";
-                    report.verdictClass = "verdict-banned";
-                }
-            } catch (e) {
-                report.issues.push("⚠️ Не удалось прочитать архив (возможно, повреждён или не ZIP/JAR)");
-            }
-        } else {
-            report.issues.push("📦 Файл не является JAR/ZIP – моды Minecraft обычно имеют расширение .jar");
-        }
     }
     
     report.details = `
