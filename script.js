@@ -1,5 +1,5 @@
 // ========================
-// ranCheck – множественная загрузка, улучшенное определение имени мода
+// ranCheck – улучшенное определение имени мода (сохраняет несколько сегментов)
 // ========================
 
 const dropArea = document.getElementById('dropArea');
@@ -44,7 +44,7 @@ const trustedMods = [
     { name: "Indium", keywords: ["indium"] }
 ];
 
-// ---------- 3. ФУНКЦИИ ОПРЕДЕЛЕНИЯ ВЕРСИЙ И НАЗВАНИЯ ----------
+// ---------- 3. ФУНКЦИИ ОПРЕДЕЛЕНИЯ ВЕРСИЙ ----------
 function isMinecraftVersion(versionStr) {
     if (!versionStr) return false;
     const match = versionStr.match(/^(\d+)\.(\d+)\.(\d+)$/);
@@ -95,9 +95,9 @@ function identifyVersions(filename) {
     return { mcVersion, modVersion };
 }
 
-// НОВАЯ ФУНКЦИЯ: определяет имя мода по правилу "до разделителя, после которого цифра"
+// НОВАЯ УЛУЧШЕННАЯ ФУНКЦИЯ ОПРЕДЕЛЕНИЯ ИМЕНИ МОДА
 function identifyModName(filename) {
-    // 1. Сначала пробуем найти по ключевым словам из trustedMods
+    // 1. Приоритет: поиск по trustedMods
     const lowerName = filename.toLowerCase();
     for (const mod of trustedMods) {
         for (const kw of mod.keywords) {
@@ -105,16 +105,37 @@ function identifyModName(filename) {
         }
     }
     
-    // 2. Ищем первый дефис или подчёркивание, после которого идёт цифра (начало версии)
-    const match = filename.match(/^([^_-]+)[_-](\d)/);
-    if (match && match[1].length > 1) {
-        return match[1]; // имя до разделителя
+    // 2. Определяем версии
+    const { mcVersion, modVersion } = identifyVersions(filename);
+    let versionStr = mcVersion || modVersion;
+    if (versionStr) {
+        const versionIndex = filename.indexOf(versionStr);
+        if (versionIndex > 0) {
+            const beforeVersion = filename.substring(0, versionIndex);
+            // Ищем последний разделитель (- или _) перед версией
+            const lastSepMatch = beforeVersion.match(/[-_][^_-]*$/);
+            if (lastSepMatch) {
+                const sepIndex = beforeVersion.lastIndexOf(lastSepMatch[0][0]);
+                if (sepIndex !== -1) {
+                    const modName = filename.substring(0, sepIndex);
+                    if (modName.length > 1) return modName;
+                }
+            }
+            // Если разделитель не найден, возвращаем всё до версии (обрезая возможный разделитель)
+            let candidate = beforeVersion.replace(/[-_]$/, '');
+            if (candidate.length > 1) return candidate;
+        }
     }
     
-    // 3. Если не нашли, пробуем взять первое слово (до любого дефиса/подчёркивания)
-    const fallbackMatch = filename.match(/^([^_-]+)/);
-    if (fallbackMatch && fallbackMatch[1].length > 2) return fallbackMatch[1];
+    // 3. Если версий нет, ищем последний разделитель, после которого идёт цифра
+    const match = filename.match(/^(.*)[-_](\d)/);
+    if (match && match[1].length > 1) {
+        return match[1];
+    }
     
+    // 4. Fallback: первое слово
+    const fallback = filename.match(/^([^_-]+)/);
+    if (fallback && fallback[1].length > 1) return fallback[1];
     return null;
 }
 
