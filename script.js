@@ -1,5 +1,5 @@
 // ========================
-// ranCheck – проверка только внутренностей JAR (не имени файла)
+// ranCheck – с определением названия мода и проверкой веса
 // ========================
 
 const dropArea = document.getElementById('dropArea');
@@ -42,7 +42,7 @@ const trustedMods = [
     { name: "Indium", keywords: ["indium"] }
 ];
 
-// ---------- 3. УЛУЧШЕННОЕ РАСПОЗНАВАНИЕ ВЕРСИЙ ----------
+// ---------- 3. ФУНКЦИИ РАСПОЗНАВАНИЯ ВЕРСИЙ И НАЗВАНИЯ ----------
 function isMinecraftVersion(versionStr) {
     if (!versionStr) return false;
     const match = versionStr.match(/^(\d+)\.(\d+)\.(\d+)$/);
@@ -91,6 +91,19 @@ function identifyVersions(filename) {
         if (candidates.length > 0) modVersion = candidates.join(', ');
     }
     return { mcVersion, modVersion };
+}
+
+function identifyModName(filename) {
+    const lowerName = filename.toLowerCase();
+    for (const mod of trustedMods) {
+        for (const kw of mod.keywords) {
+            if (lowerName.includes(kw)) return mod.name;
+        }
+    }
+    // Если не нашли в trustedMods, пробуем извлечь первое слово (до дефиса/подчёркивания)
+    const match = filename.match(/^([a-zA-Z]+[-_]?[a-zA-Z]*)/);
+    if (match && match[1].length > 2) return match[1];
+    return null;
 }
 
 function autoDetectVersions() {
@@ -204,10 +217,16 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         if (modVersion) report.issues.push(`📌 Версия мода указана вручную: ${modVersion}`);
     }
     
+    // Определяем название мода (по ключевым словам или из имени файла)
+    const detectedModName = identifyModName(file.name);
+    if (detectedModName && !getTrustedModName(file.name)) {
+        report.issues.push(`🔍 Определено название мода: ${detectedModName}`);
+    }
+    
     const isTrusted = isTrustedMod(file.name);
     const trustedName = getTrustedModName(file.name);
     
-    // ===== 1. СНАЧАЛА ПРОВЕРКА ВНУТРЕННОСТЕЙ JAR (независимо от легитимности, но для легитимных пропускаем) =====
+    // ===== 1. ПРОВЕРКА ВНУТРЕННОСТЕЙ JAR (читов) =====
     let bannedInside = false;
     let bannedClassesList = [];
     
@@ -216,7 +235,6 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
             const zip = await JSZip.loadAsync(file);
             const fileNames = Object.keys(zip.files);
             for (const name of fileNames) {
-                // Проверяем только .class файлы
                 if (name.endsWith('.class')) {
                     const lowerName = name.toLowerCase();
                     if (bannedModPatterns.some(p => p.test(lowerName))) {
@@ -233,7 +251,6 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         }
     }
     
-    // Если внутри найден чит – сразу красный вердикт, остальные проверки не нужны
     if (bannedInside) {
         report.verdict = "🔴 ОБНАРУЖЕН ЗАПРЕЩЁННЫЙ КОД (чит-клиент)";
         report.verdictClass = "verdict-banned";
@@ -247,25 +264,36 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
         return report;
     }
     
-    // ===== 2. ДЛЯ ЛЕГИТИМНЫХ МОДОВ – сразу зелёный, размер только информативно =====
+    // ===== 2. ДЛЯ ЛЕГИТИМНЫХ МОДОВ – сразу зелёный, но проверяем размер по API =====
     if (isTrusted) {
         report.verdict = `✅ Легитимный мод (${trustedName})`;
         report.verdictClass = "verdict-clean";
-        // Информационная проверка размера
+        
+        // Пытаемся получить ожидаемый размер для этого мода и версии MC
+        let expectedSize = null;
+        let apiSource = null;
         let modrinthData = await searchModByHash(report.sha256);
-        if (!modrinthData && mcVersion) {
-            modrinthData = await searchModByName(trustedName, mcVersion);
-        }
         if (modrinthData) {
-            const officialSize = modrinthData.size;
-            if (officialSize !== file.size) {
-                report.issues.push(`ℹ️ Размер файла (${report.fileSizeStr}) отличается от официального на Modrinth (${(officialSize/1024).toFixed(2)} KB). Это нормально для разных версий или сборок.`);
+            expectedSize = modrinthData.size;
+            apiSource = "хешу";
+        } else if (mcVersion && trustedName) {
+            const apiData = await searchModByName(trustedName, mcVersion);
+            if (apiData) {
+                expectedSize = apiData.size;
+                apiSource = `названию "${trustedName}" и версии ${mcVersion}`;
+            }
+        }
+        
+        if (expectedSize !== null) {
+            if (Math.abs(expectedSize - file.size) > 1024) { // разница больше 1KB
+                report.issues.push(`ℹ️ Вес файла (${report.fileSizeStr}) отличается от официального (${(expectedSize/1024).toFixed(2)} KB) по ${apiSource}. Это нормально для разных версий или сборок.`);
             } else {
-                report.issues.push(`✅ Размер совпадает с официальным (Modrinth).`);
+                report.issues.push(`✅ Вес файла совпадает с официальным (${(expectedSize/1024).toFixed(2)} KB) по ${apiSource}.`);
             }
         } else {
-            report.issues.push(`ℹ️ Не удалось сверить размер с Modrinth (мод не найден в API). Это не страшно, мод остаётся легитимным.`);
+            report.issues.push(`ℹ️ Не удалось проверить вес через API (мод не найден). Это не страшно, мод остаётся легитимным.`);
         }
+        
         report.details = `
             📄 Имя: ${report.fileName}<br>
             📦 Размер: ${report.fileSizeStr}<br>
@@ -289,9 +317,30 @@ async function analyzeMod(file, manualMcVersion, manualModVersion) {
             report.verdictClass = "verdict-clean";
         }
     } else {
-        report.issues.push(`❌ Мод не опознан и не найден по хешу.`);
-        report.verdict = "⚠️ НЕИЗВЕСТНЫЙ МОД (требуется ручная проверка)";
-        report.verdictClass = "verdict-warning";
+        // Если не нашли по хешу, пробуем определить по названию и версии
+        if (detectedModName && mcVersion) {
+            const apiData = await searchModByName(detectedModName, mcVersion);
+            if (apiData) {
+                const officialSize = apiData.size;
+                if (Math.abs(officialSize - file.size) > 1024) {
+                    report.issues.push(`⚠️ Вес файла (${report.fileSizeStr}) не совпадает с официальным для мода "${detectedModName}" версии ${mcVersion} (ожидается ~${(officialSize/1024).toFixed(2)} KB). Возможно, мод изменён или это другая версия.`);
+                    report.verdict = "⚠️ ПОДОЗРИТЕЛЬНЫЙ ВЕС ФАЙЛА";
+                    report.verdictClass = "verdict-warning";
+                } else {
+                    report.issues.push(`✅ Вес файла совпадает с официальным для мода "${detectedModName}" версии ${mcVersion}.`);
+                    report.verdict = "✅ Вес соответствует официальному (мод не опознан по имени, но вес верный)";
+                    report.verdictClass = "verdict-clean";
+                }
+            } else {
+                report.issues.push(`❌ Мод не опознан и не найден по хешу. Определено название "${detectedModName}", но не удалось найти в API.`);
+                report.verdict = "⚠️ НЕИЗВЕСТНЫЙ МОД (требуется ручная проверка)";
+                report.verdictClass = "verdict-warning";
+            }
+        } else {
+            report.issues.push(`❌ Мод не опознан и не найден по хешу.`);
+            report.verdict = "⚠️ НЕИЗВЕСТНЫЙ МОД (требуется ручная проверка)";
+            report.verdictClass = "verdict-warning";
+        }
     }
     
     report.details = `
