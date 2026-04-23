@@ -8,15 +8,15 @@
 </head>
 <body>
     <div class="container" id="app">
-        <!-- Форма ввода кода -->
+        <!-- Форма входа (показывается по умолчанию) -->
         <div id="loginPanel" class="panel">
             <h1>🛡️ ranCheck</h1>
-            <p>Введите код доступа, полученный в Telegram-боте</p>
-            <input type="text" id="codeInput" placeholder="Код (6 цифр)" maxlength="6">
-            <button id="submitCode">Получить доступ</button>
-            <div id="loginMessage"></div>
-            <hr>
-            <p>Нет кода? Напишите вашему боту команду <code>/getcode</code></p>
+            <p>Для доступа к проверке модов введите код, полученный в Telegram-боте</p>
+            <input type="text" id="codeInput" placeholder="6-значный код" maxlength="6" autocomplete="off">
+            <button id="submitBtn">🔓 Получить доступ</button>
+            <div id="loginMessage" style="margin-top: 1rem; color: #ffcc4c;"></div>
+            <hr style="margin: 1.5rem 0;">
+            <p style="font-size: 0.85rem;">Нет кода? Напишите <strong>@YourBotName</strong> команду <code>/getcode</code></p>
         </div>
 
         <!-- Основной интерфейс проверки модов (изначально скрыт) -->
