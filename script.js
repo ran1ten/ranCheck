@@ -1,80 +1,371 @@
 // ========================
-// ranCheck – вход по коду из Telegram-бота (исправленная версия)
+// ranCheck – ПОЛНЫЙ ФАЙЛ script.js
 // ========================
 
-// ⚠️ ЗАМЕНИТЕ НА АДРЕС ВАШЕГО СЕРВЕРА НА RENDER
-const API_BASE_URL = "https://rancheck-bot.onrender.com"; // например, https://rancheck-bot.onrender.com
+document.addEventListener('DOMContentLoaded', function() {
+    // ---------- 1. Конфигурация ----------
+    const API_BASE_URL = "https://ВАШ_СЕРВИС.onrender.com"; // ЗАМЕНИТЕ НА ВАШ URL
 
-const loginPanel = document.getElementById('loginPanel');
-const mainPanel = document.getElementById('mainPanel');
-const codeInput = document.getElementById('codeInput');
-const submitBtn = document.getElementById('submitBtn');
-const loginMessage = document.getElementById('loginMessage');
+    // ---------- 2. Элементы ----------
+    const loginPanel = document.getElementById('loginPanel');
+    const mainPanel = document.getElementById('mainPanel');
+    const codeInput = document.getElementById('codeInput');
+    const submitBtn = document.getElementById('submitBtn');
+    const loginMessage = document.getElementById('loginMessage');
 
-// Проверяем сохранённый токен
-if (sessionStorage.getItem('ranCheckToken')) {
-    // Сразу показываем главную панель
-    loginPanel.style.display = 'none';
-    mainPanel.style.display = 'block';
-    initMainApp();
-} else {
-    // Показываем форму входа
-    loginPanel.style.display = 'block';
-    mainPanel.style.display = 'none';
-    
-    submitBtn.addEventListener('click', async () => {
-        const code = codeInput.value.trim();
-        if (!code) {
-            loginMessage.innerText = "Введите код";
+    // ---------- 3. Функция инициализации основной логики ----------
+    function initMainApp() {
+        console.log("Инициализация проверки модов...");
+
+        // ---- Элементы основного интерфейса ----
+        const dropArea = document.getElementById('dropArea');
+        const fileInput = document.getElementById('fileInput');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const mcVersionInput = document.getElementById('mcVersion');
+        const modVersionInput = document.getElementById('modVersion');
+        const autoDetectBtn = document.getElementById('autoDetectBtn');
+        const progressArea = document.getElementById('progressArea');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+
+        if (!dropArea || !fileInput) {
+            console.error("Ошибка: не найдены основные элементы для загрузки файлов");
             return;
         }
-        if (!/^\d{6}$/.test(code)) {
-            loginMessage.innerText = "Код должен быть 6 цифр";
-            return;
+
+        // ---- Чёрный список запрещённых классов (внутри JAR) ----
+        const bannedModPatterns = [
+            /chestesp/i, /freecam/i, /autofish/i,
+            /autoclicker/i, /clicker/i, /macro/i,
+            /tracers/i, /topka\s*size/i, /topkasize/i,
+            /topka\s*autocommand/i, /topkaautocommand/i,
+            /x-ray\s*entity/i, /xrayentity/i,
+            /invmove/i, /nearplayerwidget/i, /near\s*player/i,
+            /nameprotect/i, /nametag/i, /elytra\s*swap/i, /elytraswap/i,
+            /minimap/i, /radar/i, /playerradar/i, /entityradar/i,
+            /collision\s*fix/i, /collisionfix/i,
+            /wurst/i, /impact/i, /aristois/i, /future/i, /vape/i,
+            /sigma/i, /liquidbounce/i, /kristall/i, /salhack/i,
+            /killaura/i, /scaffold/i, /fly/i, /speed/i, /nuker/i,
+            /cheat/i, /hack/i, /inject/i, /bypass/i, /exploit/i,
+            /auto(click|mine|fish|totem)/i
+        ];
+
+        // ---- Легитимные моды (для мягкой проверки веса) ----
+        const trustedMods = [
+            { name: "Fabric API", keywords: ["fabric-api", "fabricapi"] },
+            { name: "Sodium", keywords: ["sodium", "sodium-fabric"] },
+            { name: "Lithium", keywords: ["lithium"] },
+            { name: "Just Enough Items (JEI)", keywords: ["jei", "justenoughitems"] },
+            { name: "OptiFine", keywords: ["optifine"] },
+            { name: "Iris Shaders", keywords: ["iris"] },
+            { name: "Phosphor", keywords: ["phosphor"] },
+            { name: "Starlight", keywords: ["starlight"] },
+            { name: "Continuity", keywords: ["continuity"] },
+            { name: "Indium", keywords: ["indium"] }
+        ];
+
+        // ---- Вспомогательные функции ----
+        async function sha256(file) {
+            const buffer = await file.arrayBuffer();
+            const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
-        loginMessage.innerText = "⏳ Отправка запроса...";
-        
-        try {
-            console.log(`Отправка кода ${code} на ${API_BASE_URL}/verify`);
-            const response = await fetch(`${API_BASE_URL}/verify`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: code })
-            });
-            console.log("Статус ответа:", response.status);
-            const data = await response.json();
-            console.log("Ответ сервера:", data);
-            
-            if (response.ok && data.success) {
-                sessionStorage.setItem('ranCheckToken', data.token);
-                loginMessage.innerText = "✅ Доступ разрешён! Загрузка...";
-                // Переключаем панели
-                loginPanel.style.display = 'none';
-                mainPanel.style.display = 'block';
-                initMainApp();
-            } else {
-                const errorMsg = data.detail || data.error || "Неверный код";
-                loginMessage.innerText = `❌ ${errorMsg}`;
+
+        function isMinecraftVersion(versionStr) {
+            if (!versionStr) return false;
+            const match = versionStr.match(/^(\d+)\.(\d+)\.(\d+)$/);
+            if (!match) return false;
+            const major = parseInt(match[1], 10);
+            const minor = parseInt(match[2], 10);
+            const patch = parseInt(match[3], 10);
+            if (major === 1) {
+                if (minor === 16 && patch >= 5) return true;
+                if (minor >= 17 && minor <= 20) return true;
+                if (minor === 21 && patch <= 11) return true;
             }
-        } catch (err) {
-            console.error("Ошибка соединения:", err);
-            loginMessage.innerText = "❌ Ошибка соединения с сервером. Проверьте консоль.";
+            return false;
         }
-    });
-}
 
-// ---------- Функция инициализации основной логики ----------
-function initMainApp() {
-    console.log("Инициализация основного интерфейса проверки модов");
-    // СЮДА ВСТАВЬТЕ ВЕСЬ ВАШ РАБОЧИЙ КОД (анализ модов, загрузка файлов и т.д.)
-    // Если у вас уже был рабочий script.js, просто скопируйте его сюда, обернув в эту функцию.
-    // Ниже – заглушка, чтобы вы понимали структуру:
-    
-    const dropArea = document.getElementById('dropArea');
-    const fileInput = document.getElementById('fileInput');
-    if (dropArea) {
+        function extractAllVersionCandidates(filename) {
+            const candidates = [];
+            const dotPattern = /\d+(?:\.\d+)+/g;
+            const alnumPattern = /[A-Za-z]+[_\d]+[A-Za-z\d]*/g;
+            let match;
+            while ((match = dotPattern.exec(filename)) !== null) {
+                if (!candidates.includes(match[0])) candidates.push(match[0]);
+            }
+            while ((match = alnumPattern.exec(filename)) !== null) {
+                if (match[0].length < 20 && !/^\d+$/.test(match[0])) {
+                    if (!candidates.includes(match[0])) candidates.push(match[0]);
+                }
+            }
+            return candidates;
+        }
+
+        function identifyVersions(filename) {
+            const candidates = extractAllVersionCandidates(filename);
+            let mcVersion = null, modVersion = null;
+            for (const cand of candidates) {
+                if (isMinecraftVersion(cand)) {
+                    mcVersion = cand;
+                    break;
+                }
+            }
+            if (mcVersion) {
+                const otherVersions = candidates.filter(c => c !== mcVersion);
+                if (otherVersions.length > 0) modVersion = otherVersions[0];
+            } else if (candidates.length > 0) {
+                modVersion = candidates.join(', ');
+            }
+            return { mcVersion, modVersion };
+        }
+
+        function identifyModName(filename) {
+            const lowerName = filename.toLowerCase();
+            for (const mod of trustedMods) {
+                for (const kw of mod.keywords) {
+                    if (lowerName.includes(kw)) return mod.name;
+                }
+            }
+            const match = filename.match(/^([^_-]+)[_-](\d)/);
+            if (match && match[1].length > 1) return match[1];
+            const fallback = filename.match(/^([^_-]+)/);
+            if (fallback && fallback[1].length > 1) return fallback[1];
+            return null;
+        }
+
+        function isTrustedMod(filename) {
+            const lowerName = filename.toLowerCase();
+            for (const mod of trustedMods) {
+                for (const kw of mod.keywords) {
+                    if (lowerName.includes(kw)) return true;
+                }
+            }
+            return false;
+        }
+
+        function getTrustedModName(filename) {
+            const lowerName = filename.toLowerCase();
+            for (const mod of trustedMods) {
+                for (const kw of mod.keywords) {
+                    if (lowerName.includes(kw)) return mod.name;
+                }
+            }
+            return null;
+        }
+
+        // ---- Анализ одного мода (без API Modrinth, только локальная проверка) ----
+        async function analyzeOneMod(file, customMcVer, customModVer) {
+            const report = {
+                fileName: file.name,
+                fileSize: file.size,
+                fileSizeStr: (file.size / 1024).toFixed(2) + " KB",
+                sha256: "",
+                issues: [],
+                verdict: "",
+                verdictClass: "",
+                details: ""
+            };
+            report.sha256 = await sha256(file);
+
+            let mcVersion = customMcVer;
+            let modVersion = customModVer;
+            if (!mcVersion && !modVersion) {
+                const auto = identifyVersions(file.name);
+                mcVersion = auto.mcVersion;
+                modVersion = auto.modVersion;
+                if (mcVersion) report.issues.push(`🔍 Версия Minecraft: ${mcVersion}`);
+                if (modVersion) report.issues.push(`🔍 Версия мода: ${modVersion}`);
+            } else {
+                if (mcVersion) report.issues.push(`📌 Версия Minecraft (вручную): ${mcVersion}`);
+                if (modVersion) report.issues.push(`📌 Версия мода (вручную): ${modVersion}`);
+            }
+
+            const detectedName = identifyModName(file.name);
+            if (detectedName && !getTrustedModName(file.name)) {
+                report.issues.push(`🔍 Название мода: ${detectedName}`);
+            }
+
+            const isTrusted = isTrustedMod(file.name);
+            const trustedName = getTrustedModName(file.name);
+
+            // Проверка внутренних классов (читов)
+            let bannedInside = false;
+            let bannedClassesList = [];
+            if (!isTrusted && (file.name.endsWith('.jar') || file.name.endsWith('.zip'))) {
+                try {
+                    const zip = await JSZip.loadAsync(file);
+                    const fileNames = Object.keys(zip.files);
+                    for (const name of fileNames) {
+                        if (name.endsWith('.class')) {
+                            const lowerName = name.toLowerCase();
+                            if (bannedModPatterns.some(p => p.test(lowerName))) {
+                                bannedInside = true;
+                                if (bannedClassesList.length < 10) bannedClassesList.push(name);
+                            }
+                        }
+                    }
+                    if (bannedInside) {
+                        report.issues.push(`🔴 ВНУТРИ JAR обнаружены запрещённые классы: ${bannedClassesList.slice(0,5).join(', ')}${bannedClassesList.length > 5 ? '...' : ''}`);
+                    }
+                } catch(e) { report.issues.push("⚠️ Не удалось прочитать архив"); }
+            }
+
+            if (bannedInside) {
+                report.verdict = "🔴 ЗАПРЕЩЁННЫЙ КОД (чит-клиент)";
+                report.verdictClass = "verdict-banned";
+                report.details = report.issues.map(i => `• ${i}`).join('<br>');
+                return report;
+            }
+
+            // Легитимный мод – зелёный вердикт
+            if (isTrusted) {
+                report.verdict = `✅ Легитимный мод (${trustedName})`;
+                report.verdictClass = "verdict-clean";
+                report.issues.push(`ℹ️ Проверка веса: ваш файл весит ${report.fileSizeStr}. Для легитимных модов точное совпадение веса не критично.`);
+                report.details = report.issues.map(i => `• ${i}`).join('<br>');
+                return report;
+            }
+
+            // Неизвестный мод – предупреждение
+            report.verdict = "⚠️ НЕИЗВЕСТНЫЙ МОД (требуется ручная проверка)";
+            report.verdictClass = "verdict-warning";
+            report.details = report.issues.map(i => `• ${i}`).join('<br>');
+            return report;
+        }
+
+        // ---- Обработка нескольких файлов ----
+        async function processMultipleFiles(files, mcVer, modVer) {
+            if (files.length > 100) {
+                alert("Максимум 100 файлов за раз");
+                return;
+            }
+            resultsContainer.innerHTML = "";
+            progressArea.classList.remove('hidden');
+            progressFill.style.width = "0%";
+            progressText.innerText = `Готово 0 / ${files.length}`;
+
+            let processed = 0;
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                card.innerHTML = `<div class="verdict">⏳ Проверка: ${escapeHtml(file.name)}</div><div class="details">Анализируем...</div>`;
+                resultsContainer.appendChild(card);
+
+                try {
+                    const report = await analyzeOneMod(file, mcVer, modVer);
+                    card.innerHTML = `
+                        <div class="verdict ${report.verdictClass}">${escapeHtml(report.verdict)}</div>
+                        <div class="details">
+                            📄 Имя: ${escapeHtml(report.fileName)}<br>
+                            📦 Размер: ${report.fileSizeStr}<br>
+                            🔑 SHA-256: ${report.sha256.substring(0, 32)}…<br><br>
+                            ${report.details}
+                        </div>
+                    `;
+                } catch(err) {
+                    card.innerHTML = `<div class="verdict verdict-warning">❌ Ошибка</div><div class="details">${escapeHtml(file.name)}: ${err.message}</div>`;
+                }
+                processed++;
+                const percent = (processed / files.length) * 100;
+                progressFill.style.width = `${percent}%`;
+                progressText.innerText = `Готово ${processed} / ${files.length}`;
+                await new Promise(r => setTimeout(r, 50));
+            }
+            progressText.innerText = `Готово ${files.length} / ${files.length} ✅`;
+            setTimeout(() => progressArea.classList.add('hidden'), 2000);
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        function handleFiles(fileList) {
+            if (!fileList || fileList.length === 0) return;
+            const files = Array.from(fileList).filter(f => f.name.endsWith('.jar'));
+            if (files.length === 0) {
+                alert("Пожалуйста, выберите файлы с расширением .jar");
+                return;
+            }
+            const manualMc = mcVersionInput.value.trim();
+            const manualMod = modVersionInput.value.trim();
+            processMultipleFiles(files, manualMc, manualMod);
+        }
+
+        // ---- События ----
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
         dropArea.addEventListener('click', () => fileInput.click());
-        // ... остальные обработчики
+        dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.style.background = 'rgba(76,154,255,0.2)'; });
+        dropArea.addEventListener('dragleave', () => { dropArea.style.background = ''; });
+        dropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropArea.style.background = '';
+            handleFiles(e.dataTransfer.files);
+        });
+
+        if (autoDetectBtn) {
+            autoDetectBtn.addEventListener('click', () => {
+                const file = fileInput.files[0];
+                if (!file) { alert("Сначала загрузите файл"); return; }
+                const { mcVersion, modVersion } = identifyVersions(file.name);
+                if (mcVersion) mcVersionInput.value = mcVersion;
+                if (modVersion) modVersionInput.value = modVersion;
+                let msg = `Извлечено: версия Minecraft = ${mcVersion || 'не определена'}, версия мода = ${modVersion || 'не определена'}`;
+                alert(msg);
+            });
+        }
+
+        console.log("Проверка модов готова!");
     }
-    alert("Теперь сюда нужно вставить ваш код проверки модов. Временно работает заглушка.");
-}
+
+    // ---------- 4. Логика входа ----------
+    if (!loginPanel || !mainPanel || !codeInput || !submitBtn || !loginMessage) {
+        console.error("Не найдены элементы для входа. Убедитесь, что в index.html есть loginPanel, codeInput, submitBtn, loginMessage, mainPanel.");
+        return;
+    }
+
+    if (sessionStorage.getItem('ranCheckToken')) {
+        loginPanel.style.display = 'none';
+        mainPanel.style.display = 'block';
+        initMainApp();
+    } else {
+        loginPanel.style.display = 'block';
+        mainPanel.style.display = 'none';
+        submitBtn.addEventListener('click', async () => {
+            const code = codeInput.value.trim();
+            if (!code) { loginMessage.innerText = "Введите код"; return; }
+            if (!/^\d{6}$/.test(code)) { loginMessage.innerText = "Код должен быть 6 цифр"; return; }
+            loginMessage.innerText = "⏳ Проверка...";
+            try {
+                const response = await fetch(`${API_BASE_URL}/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    sessionStorage.setItem('ranCheckToken', data.token);
+                    loginMessage.innerText = "✅ Доступ разрешён!";
+                    loginPanel.style.display = 'none';
+                    mainPanel.style.display = 'block';
+                    initMainApp();
+                } else {
+                    const errorMsg = data.detail || data.error || "Неверный код";
+                    loginMessage.innerText = `❌ ${errorMsg}`;
+                }
+            } catch (err) {
+                console.error(err);
+                loginMessage.innerText = "❌ Ошибка соединения с сервером";
+            }
+        });
+    }
+});
