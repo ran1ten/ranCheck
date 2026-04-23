@@ -7,35 +7,45 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>🛡️ ranCheck</h1>
-        <p>Загрузите моды Minecraft (.jar) для проверки (до 100 файлов)</p>
-        
-        <div class="upload-area" id="dropArea">
-            <p>📂 Перетащите файлы сюда или нажмите для выбора</p>
-            <input type="file" id="fileInput" hidden accept=".jar,.zip" multiple>
+    <div class="container" id="app">
+        <!-- Форма ввода кода -->
+        <div id="loginPanel" class="panel">
+            <h1>🛡️ ranCheck</h1>
+            <p>Введите код доступа, полученный в Telegram-боте</p>
+            <input type="text" id="codeInput" placeholder="Код (6 цифр)" maxlength="6">
+            <button id="submitCode">Получить доступ</button>
+            <div id="loginMessage"></div>
+            <hr>
+            <p>Нет кода? Напишите вашему боту команду <code>/getcode</code></p>
         </div>
 
-        <div class="version-inputs">
-            <label>Версия Minecraft (опционально): 
-                <input type="text" id="mcVersion" placeholder="например, 1.21.4">
-            </label>
-            <label>Версия мода (опционально): 
-                <input type="text" id="modVersion" placeholder="например, 0.92.0">
-            </label>
-            <button id="autoDetectBtn">🔍 Извлечь версии из имени</button>
-        </div>
-
-        <!-- Прогресс-бар -->
-        <div id="progressArea" class="progress-area hidden">
-            <div class="progress-bar">
-                <div id="progressFill" class="progress-fill"></div>
+        <!-- Основной интерфейс проверки модов (изначально скрыт) -->
+        <div id="mainPanel" class="panel hidden">
+            <h1>🛡️ ranCheck</h1>
+            <p>Загрузите моды Minecraft (.jar) для проверки (до 100 файлов)</p>
+            
+            <div class="upload-area" id="dropArea">
+                <p>📂 Перетащите файлы сюда или нажмите для выбора</p>
+                <input type="file" id="fileInput" hidden accept=".jar,.zip" multiple>
             </div>
-            <p id="progressText">Готово 0 / 0</p>
-        </div>
 
-        <!-- Результаты -->
-        <div id="resultsContainer" class="results-container"></div>
+            <div class="version-inputs">
+                <label>Версия Minecraft (опционально): 
+                    <input type="text" id="mcVersion" placeholder="например, 1.21.4">
+                </label>
+                <label>Версия мода (опционально): 
+                    <input type="text" id="modVersion" placeholder="например, 0.92.0">
+                </label>
+                <button id="autoDetectBtn">🔍 Извлечь версии из имени</button>
+            </div>
+
+            <div id="progressArea" class="progress-area hidden">
+                <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+                <p id="progressText"></p>
+            </div>
+
+            <div id="resultsContainer" class="results-container"></div>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
