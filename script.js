@@ -4,7 +4,7 @@
 
 document.addEventListener('DOMContentLoaded', function() {
     // ---------- 1. Конфигурация ----------
-    const API_BASE_URL = "https://ВАШ_СЕРВИС.onrender.com"; // ЗАМЕНИТЕ НА ВАШ URL
+    const API_BASE_URL = "https://ranCheck-bot.onrender.com"; // ЗАМЕНИТЕ НА ВАШ URL
 
     // ---------- 2. Элементы ----------
     const loginPanel = document.getElementById('loginPanel');
