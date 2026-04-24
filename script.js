@@ -1,23 +1,60 @@
 // ========================
-// ranCheck – ПОЛНЫЙ ФАЙЛ script.js
+// ranCheck – ПОЛНЫЙ СКРИПТ С ЛОГИРОВАНИЕМ ДЕЙСТВИЙ ПОЛЬЗОВАТЕЛЯ
 // ========================
 
 document.addEventListener('DOMContentLoaded', function() {
-    // ---------- 1. Конфигурация ----------
-    const API_BASE_URL = "https://ranCheck-bot.onrender.com"; // ЗАМЕНИТЕ НА ВАШ URL
+    // ---------- 1. КОНФИГУРАЦИЯ ----------
+    // Адрес вашего сервера на Render (ОБЯЗАТЕЛЬНО ЗАМЕНИТЕ НА СВОЙ!)
+    const API_BASE_URL = "https://rancheck-bot.onrender.com";   // <-- ЗДЕСЬ ВАШ АДРЕС
 
-    // ---------- 2. Элементы ----------
+    // ---------- 2. ЭЛЕМЕНТЫ ВХОДА ----------
     const loginPanel = document.getElementById('loginPanel');
     const mainPanel = document.getElementById('mainPanel');
     const codeInput = document.getElementById('codeInput');
     const submitBtn = document.getElementById('submitBtn');
     const loginMessage = document.getElementById('loginMessage');
 
-    // ---------- 3. Функция инициализации основной логики ----------
+    // Проверяем, есть ли сохранённый токен
+    if (sessionStorage.getItem('ranCheckToken')) {
+        loginPanel.style.display = 'none';
+        mainPanel.style.display = 'block';
+        initMainApp();
+    } else {
+        loginPanel.style.display = 'block';
+        mainPanel.style.display = 'none';
+        submitBtn.addEventListener('click', async () => {
+            const code = codeInput.value.trim();
+            if (!code) { loginMessage.innerText = "Введите код"; return; }
+            if (!/^\d{6}$/.test(code)) { loginMessage.innerText = "Код должен быть 6 цифр"; return; }
+            loginMessage.innerText = "⏳ Проверка...";
+            try {
+                const response = await fetch(`${API_BASE_URL}/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    sessionStorage.setItem('ranCheckToken', data.token);
+                    loginMessage.innerText = "✅ Доступ разрешён!";
+                    loginPanel.style.display = 'none';
+                    mainPanel.style.display = 'block';
+                    initMainApp();
+                } else {
+                    const errorMsg = data.detail || data.error || "Неверный код";
+                    loginMessage.innerText = `❌ ${errorMsg}`;
+                }
+            } catch (err) {
+                console.error(err);
+                loginMessage.innerText = "❌ Ошибка соединения с сервером";
+            }
+        });
+    }
+
+    // ---------- 3. ОСНОВНАЯ ЛОГИКА ПРОВЕРКИ МОДОВ ----------
     function initMainApp() {
         console.log("Инициализация проверки модов...");
 
-        // ---- Элементы основного интерфейса ----
         const dropArea = document.getElementById('dropArea');
         const fileInput = document.getElementById('fileInput');
         const resultsContainer = document.getElementById('resultsContainer');
@@ -29,11 +66,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const progressText = document.getElementById('progressText');
 
         if (!dropArea || !fileInput) {
-            console.error("Ошибка: не найдены основные элементы для загрузки файлов");
+            console.error("Не найдены основные элементы");
             return;
         }
 
-        // ---- Чёрный список запрещённых классов (внутри JAR) ----
+        // ---------- Чёрный список читов ----------
         const bannedModPatterns = [
             /chestesp/i, /freecam/i, /autofish/i,
             /autoclicker/i, /clicker/i, /macro/i,
@@ -51,7 +88,7 @@ document.addEventListener('DOMContentLoaded', function() {
             /auto(click|mine|fish|totem)/i
         ];
 
-        // ---- Легитимные моды (для мягкой проверки веса) ----
+        // ---------- Легитимные моды ----------
         const trustedMods = [
             { name: "Fabric API", keywords: ["fabric-api", "fabricapi"] },
             { name: "Sodium", keywords: ["sodium", "sodium-fabric"] },
@@ -65,7 +102,7 @@ document.addEventListener('DOMContentLoaded', function() {
             { name: "Indium", keywords: ["indium"] }
         ];
 
-        // ---- Вспомогательные функции ----
+        // ---------- Вспомогательные функции ----------
         async function sha256(file) {
             const buffer = await file.arrayBuffer();
             const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
@@ -156,7 +193,20 @@ document.addEventListener('DOMContentLoaded', function() {
             return null;
         }
 
-        // ---- Анализ одного мода (без API Modrinth, только локальная проверка) ----
+        // ---------- ОТПРАВКА ЛОГА НА СЕРВЕР ----------
+        async function sendWebLog(modName, verdict) {
+            try {
+                await fetch(`${API_BASE_URL}/api/log-web-action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mod_name: modName, verdict: verdict })
+                });
+            } catch(e) {
+                console.warn("Не удалось отправить лог", e);
+            }
+        }
+
+        // ---------- АНАЛИЗ ОДНОГО МОДА ----------
         async function analyzeOneMod(file, customMcVer, customModVer) {
             const report = {
                 fileName: file.name,
@@ -191,7 +241,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const isTrusted = isTrustedMod(file.name);
             const trustedName = getTrustedModName(file.name);
 
-            // Проверка внутренних классов (читов)
+            // Проверка внутренностей JAR на читы
             let bannedInside = false;
             let bannedClassesList = [];
             if (!isTrusted && (file.name.endsWith('.jar') || file.name.endsWith('.zip'))) {
@@ -217,31 +267,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 report.verdict = "🔴 ЗАПРЕЩЁННЫЙ КОД (чит-клиент)";
                 report.verdictClass = "verdict-banned";
                 report.details = report.issues.map(i => `• ${i}`).join('<br>');
+                // Логируем действие
+                sendWebLog(report.fileName, report.verdict);
                 return report;
             }
 
-            // Легитимный мод – зелёный вердикт
             if (isTrusted) {
                 report.verdict = `✅ Легитимный мод (${trustedName})`;
                 report.verdictClass = "verdict-clean";
-                report.issues.push(`ℹ️ Проверка веса: ваш файл весит ${report.fileSizeStr}. Для легитимных модов точное совпадение веса не критично.`);
+                report.issues.push(`ℹ️ Проверка веса: ваш файл весит ${report.fileSizeStr}. Для легитимных модов точное совпадение не критично.`);
                 report.details = report.issues.map(i => `• ${i}`).join('<br>');
+                sendWebLog(report.fileName, report.verdict);
                 return report;
             }
 
-            // Неизвестный мод – предупреждение
+            // Неизвестный мод
             report.verdict = "⚠️ НЕИЗВЕСТНЫЙ МОД (требуется ручная проверка)";
             report.verdictClass = "verdict-warning";
             report.details = report.issues.map(i => `• ${i}`).join('<br>');
+            sendWebLog(report.fileName, report.verdict);
             return report;
         }
 
-        // ---- Обработка нескольких файлов ----
+        // ---------- ОБРАБОТКА НЕСКОЛЬКИХ ФАЙЛОВ ----------
         async function processMultipleFiles(files, mcVer, modVer) {
-            if (files.length > 100) {
-                alert("Максимум 100 файлов за раз");
-                return;
-            }
+            if (files.length > 100) { alert("Максимум 100 файлов"); return; }
             resultsContainer.innerHTML = "";
             progressArea.classList.remove('hidden');
             progressFill.style.width = "0%";
@@ -282,26 +332,20 @@ document.addEventListener('DOMContentLoaded', function() {
         function escapeHtml(str) {
             if (!str) return '';
             return str.replace(/[&<>]/g, function(m) {
-                if (m === '&') return '&amp;';
-                if (m === '<') return '&lt;';
-                if (m === '>') return '&gt;';
-                return m;
+                return m === '&' ? '&amp;' : (m === '<' ? '&lt;' : '&gt;');
             });
         }
 
         function handleFiles(fileList) {
             if (!fileList || fileList.length === 0) return;
             const files = Array.from(fileList).filter(f => f.name.endsWith('.jar'));
-            if (files.length === 0) {
-                alert("Пожалуйста, выберите файлы с расширением .jar");
-                return;
-            }
+            if (files.length === 0) { alert("Выберите файлы .jar"); return; }
             const manualMc = mcVersionInput.value.trim();
             const manualMod = modVersionInput.value.trim();
             processMultipleFiles(files, manualMc, manualMod);
         }
 
-        // ---- События ----
+        // ---------- НАСТРОЙКА СОБЫТИЙ ----------
         fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
         dropArea.addEventListener('click', () => fileInput.click());
         dropArea.addEventListener('dragover', (e) => { e.preventDefault(); dropArea.style.background = 'rgba(76,154,255,0.2)'; });
@@ -319,53 +363,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const { mcVersion, modVersion } = identifyVersions(file.name);
                 if (mcVersion) mcVersionInput.value = mcVersion;
                 if (modVersion) modVersionInput.value = modVersion;
-                let msg = `Извлечено: версия Minecraft = ${mcVersion || 'не определена'}, версия мода = ${modVersion || 'не определена'}`;
-                alert(msg);
+                alert(`Извлечено: версия Minecraft = ${mcVersion || 'не определена'}, версия мода = ${modVersion || 'не определена'}`);
             });
         }
-
         console.log("Проверка модов готова!");
-    }
-
-    // ---------- 4. Логика входа ----------
-    if (!loginPanel || !mainPanel || !codeInput || !submitBtn || !loginMessage) {
-        console.error("Не найдены элементы для входа. Убедитесь, что в index.html есть loginPanel, codeInput, submitBtn, loginMessage, mainPanel.");
-        return;
-    }
-
-    if (sessionStorage.getItem('ranCheckToken')) {
-        loginPanel.style.display = 'none';
-        mainPanel.style.display = 'block';
-        initMainApp();
-    } else {
-        loginPanel.style.display = 'block';
-        mainPanel.style.display = 'none';
-        submitBtn.addEventListener('click', async () => {
-            const code = codeInput.value.trim();
-            if (!code) { loginMessage.innerText = "Введите код"; return; }
-            if (!/^\d{6}$/.test(code)) { loginMessage.innerText = "Код должен быть 6 цифр"; return; }
-            loginMessage.innerText = "⏳ Проверка...";
-            try {
-                const response = await fetch(`${API_BASE_URL}/verify`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code: code })
-                });
-                const data = await response.json();
-                if (response.ok && data.success) {
-                    sessionStorage.setItem('ranCheckToken', data.token);
-                    loginMessage.innerText = "✅ Доступ разрешён!";
-                    loginPanel.style.display = 'none';
-                    mainPanel.style.display = 'block';
-                    initMainApp();
-                } else {
-                    const errorMsg = data.detail || data.error || "Неверный код";
-                    loginMessage.innerText = `❌ ${errorMsg}`;
-                }
-            } catch (err) {
-                console.error(err);
-                loginMessage.innerText = "❌ Ошибка соединения с сервером";
-            }
-        });
     }
 });
